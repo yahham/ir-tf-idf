@@ -1,10 +1,11 @@
 use std::collections::HashMap;
+use std::env;
 use std::fs::{self, File};
 use std::io;
 use std::path::{Path, PathBuf};
+use std::process::exit;
 use xml::reader::{EventReader, XmlEvent};
 
-#[derive(Debug)]
 struct Lexer<'a> {
     content: &'a [char],
 }
@@ -50,6 +51,7 @@ impl<'a> Lexer<'a> {
         if self.content[0].is_alphabetic() {
             return Some(self.chop_while(|x| x.is_alphanumeric()));
         }
+
         return Some(self.chop(1));
     }
 }
@@ -61,10 +63,6 @@ impl<'a> Iterator for Lexer<'a> {
         self.next_token()
     }
 }
-
-// fn index_document(_doc_content: &str) -> HashMap<String, usize> {
-//     todo!("not implmented");
-// }
 
 fn read_entire_xml_file<P: AsRef<Path>>(file_path: P) -> io::Result<String> {
     let file = File::open(file_path)?;
@@ -82,10 +80,21 @@ fn read_entire_xml_file<P: AsRef<Path>>(file_path: P) -> io::Result<String> {
 type TermFreq = HashMap<String, usize>;
 type TermFreqIndex = HashMap<PathBuf, TermFreq>;
 
-fn main() -> io::Result<()> {
-    let dir_path = "dataset/reviews/www.austinchronicle.com";
+fn check_index(index_path: &str) -> io::Result<()> {
+    let index_file = File::open(index_path)?;
+    println!("Reading {index_path} index file...");
+    let tf_index: TermFreqIndex = serde_json::from_reader(index_file).expect("serde does not fail");
+    println!(
+        "{index_path} contains {count} files",
+        count = tf_index.len()
+    );
+    Ok(())
+}
+
+fn index_folder(dir_path: &str) -> io::Result<()> {
     let dir = fs::read_dir(dir_path)?;
     let mut tf_index = TermFreqIndex::new();
+
     for file in dir {
         let file_path = file?.path();
 
@@ -102,7 +111,6 @@ fn main() -> io::Result<()> {
                 .iter()
                 .map(|x| x.to_ascii_uppercase())
                 .collect::<String>();
-
             if let Some(freq) = tf.get_mut(&term) {
                 *freq += 1;
             } else {
@@ -123,4 +131,42 @@ fn main() -> io::Result<()> {
     serde_json::to_writer(index_file, &tf_index).expect("serde works fine");
 
     Ok(())
+}
+
+fn main() {
+    let mut args = env::args();
+    let _program = args.next().expect("path to program is provided");
+
+    let subcommand = args.next().unwrap_or_else(|| {
+        println!("ERROR: no subcommand is provided");
+        exit(1)
+    });
+
+    match subcommand.as_str() {
+        "index" => {
+            let dir_path = args.next().unwrap_or_else(|| {
+                println!("ERROR: no directory is provided for {subcommand} subcommand");
+                exit(1);
+            });
+
+            index_folder(&dir_path).unwrap_or_else(|err| {
+                println!("ERROR: could not index folder {dir_path}: {err}");
+                exit(1);
+            });
+        }
+        "search" => {
+            let index_path = args.next().unwrap_or_else(|| {
+                println!("ERROR: no path to index is provided for {subcommand} subcommand");
+                exit(1);
+            });
+            check_index(&index_path).unwrap_or_else(|err| {
+                println!("ERROR: could not check index file {index_path}: {err}");
+                exit(1);
+            });
+        }
+        _ => {
+            println!("ERROR: unknown subcommand {subcommand}");
+            exit(1)
+        }
+    }
 }
