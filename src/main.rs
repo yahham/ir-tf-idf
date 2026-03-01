@@ -4,6 +4,7 @@ use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::result::Result;
+use tiny_http::{Header, Response, Server};
 use xml::common::{Position, TextPosition};
 use xml::reader::{EventReader, XmlEvent};
 
@@ -196,6 +197,7 @@ fn usage(program: &str) {
     eprintln!(
         "    search <index-file>    check how many documents are indexed in the file (searching is not implemented yet)"
     );
+    eprintln!("    serve [adress]   start local HTTP server with Web Interface");
 }
 
 fn entry() -> Result<(), ()> {
@@ -225,6 +227,44 @@ fn entry() -> Result<(), ()> {
             })?;
 
             check_index(&index_path)?;
+        }
+        "serve" => {
+            let address = args.next().unwrap_or("127.0.0.1:8000".to_string());
+            let server = Server::http(&address).map_err(|err| {
+                eprintln!("ERROR: could not start HTTP server at {address}: {err}")
+            })?;
+
+            println!("INFO: listening at http://{address}/");
+
+            for request in server.incoming_requests() {
+                println!(
+                    "INFO: received request! method: {:?}, url: {:?}",
+                    request.method(),
+                    request.url()
+                );
+
+                let content_type_text_html =
+                    Header::from_bytes("Content-Type", "text/html; charset=utf-8")
+                        .expect("That we dind't put any garbage in the headers");
+                let response = Response::from_string(
+                    r#"
+                    <!doctype html>
+                    <html>
+                        <head>
+                            <title>IR TF-IDF</title>
+                        </head>
+                        <body>
+                            <h1>IR - TF-IDF</h1>
+                        </body>
+                    </html>
+                    "#,
+                )
+                .with_header(content_type_text_html);
+                request.respond(response).unwrap_or_else(|err| {
+                    eprintln!("ERROR: could not serve a request: {err}");
+                });
+            }
+            todo!("not implmented");
         }
         _ => {
             usage(&program);
