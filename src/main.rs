@@ -4,7 +4,7 @@ use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::result::Result;
-use tiny_http::{Header, Response, Server};
+use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 use xml::common::{Position, TextPosition};
 use xml::reader::{EventReader, XmlEvent};
 
@@ -200,6 +200,55 @@ fn usage(program: &str) {
     eprintln!("    serve [adress]   start local HTTP server with Web Interface");
 }
 
+fn serve_request(request: Request) -> Result<(), ()> {
+    println!(
+        "INFO: received request! method: {:?}, url: {:?}",
+        request.method(),
+        request.url()
+    );
+
+    match (request.method(), request.url()) {
+        (Method::Get, "/index.js") => {
+            let content_type_text_javascript =
+                Header::from_bytes("Content-Type", "text/javascript; charset=utf-8")
+                    .expect("That we dind't put any garbage in the headers");
+
+            let index_js_path = "src/index.js";
+            let index_js_file = File::open(index_js_path).map_err(|err| {
+                eprintln!("ERROR: could not serve file {index_js_path}: {err}");
+            })?;
+            let response =
+                Response::from_file(index_js_file).with_header(content_type_text_javascript);
+            request.respond(response).map_err(|err| {
+                eprintln!("ERROR: could not serve a request: {err}");
+            })?;
+        }
+        (Method::Get, "/") | (Method::Get, "/index.html") => {
+            let content_type_text_html =
+                Header::from_bytes("Content-Type", "text/html; charset=utf-8")
+                    .expect("That we dind't put any garbage in the headers");
+
+            let index_html_path = "src/index.html";
+            let index_html_file = File::open(index_html_path).map_err(|err| {
+                eprintln!("ERROR: could not serve file {index_html_path}: {err}");
+            })?;
+            let response = Response::from_file(index_html_file).with_header(content_type_text_html);
+            request.respond(response).map_err(|err| {
+                eprintln!("ERROR: could not serve a request: {err}");
+            })?;
+        }
+        _ => {
+            request
+                .respond(Response::from_string("404").with_status_code(StatusCode(404)))
+                .map_err(|err| {
+                    eprintln!("ERROR: could not serve a request: {err}");
+                })?;
+        }
+    }
+
+    Ok(())
+}
+
 fn entry() -> Result<(), ()> {
     let mut args = env::args();
     let program = args.next().expect("path to program is provided");
@@ -237,32 +286,7 @@ fn entry() -> Result<(), ()> {
             println!("INFO: listening at http://{address}/");
 
             for request in server.incoming_requests() {
-                println!(
-                    "INFO: received request! method: {:?}, url: {:?}",
-                    request.method(),
-                    request.url()
-                );
-
-                let content_type_text_html =
-                    Header::from_bytes("Content-Type", "text/html; charset=utf-8")
-                        .expect("That we dind't put any garbage in the headers");
-                let response = Response::from_string(
-                    r#"
-                    <!doctype html>
-                    <html>
-                        <head>
-                            <title>IR TF-IDF</title>
-                        </head>
-                        <body>
-                            <h1>IR - TF-IDF</h1>
-                        </body>
-                    </html>
-                    "#,
-                )
-                .with_header(content_type_text_html);
-                request.respond(response).unwrap_or_else(|err| {
-                    eprintln!("ERROR: could not serve a request: {err}");
-                });
+                let _ = serve_request(request);
             }
             todo!("not implmented");
         }
