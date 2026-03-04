@@ -200,6 +200,27 @@ fn usage(program: &str) {
     eprintln!("    serve [adress]   start local HTTP server with Web Interface");
 }
 
+fn serve_static_file(request: Request, file_path: &str, content_type: &str) -> Result<(), ()> {
+    let content_type_header = Header::from_bytes("Content-Type", content_type)
+        .expect("That we dind't put any garbage in the headers");
+
+    let file = File::open(file_path).map_err(|err| {
+        eprintln!("ERROR: could not serve file {file_path}: {err}");
+    })?;
+    let response = Response::from_file(file).with_header(content_type_header);
+    request.respond(response).map_err(|err| {
+        eprintln!("ERROR: could not serve static file {file_path} request: {err}");
+    })
+}
+
+fn serve_404(request: Request) -> Result<(), ()> {
+    request
+        .respond(Response::from_string("404").with_status_code(StatusCode(404)))
+        .map_err(|err| {
+            eprintln!("ERROR: could not serve a request: {err}");
+        })
+}
+
 fn serve_request(request: Request) -> Result<(), ()> {
     println!(
         "INFO: received request! method: {:?}, url: {:?}",
@@ -209,44 +230,13 @@ fn serve_request(request: Request) -> Result<(), ()> {
 
     match (request.method(), request.url()) {
         (Method::Get, "/index.js") => {
-            let content_type_text_javascript =
-                Header::from_bytes("Content-Type", "text/javascript; charset=utf-8")
-                    .expect("That we dind't put any garbage in the headers");
-
-            let index_js_path = "src/index.js";
-            let index_js_file = File::open(index_js_path).map_err(|err| {
-                eprintln!("ERROR: could not serve file {index_js_path}: {err}");
-            })?;
-            let response =
-                Response::from_file(index_js_file).with_header(content_type_text_javascript);
-            request.respond(response).map_err(|err| {
-                eprintln!("ERROR: could not serve a request: {err}");
-            })?;
+            serve_static_file(request, "src/index.js", "text/javascript; charset=utf-8")
         }
         (Method::Get, "/") | (Method::Get, "/index.html") => {
-            let content_type_text_html =
-                Header::from_bytes("Content-Type", "text/html; charset=utf-8")
-                    .expect("That we dind't put any garbage in the headers");
-
-            let index_html_path = "src/index.html";
-            let index_html_file = File::open(index_html_path).map_err(|err| {
-                eprintln!("ERROR: could not serve file {index_html_path}: {err}");
-            })?;
-            let response = Response::from_file(index_html_file).with_header(content_type_text_html);
-            request.respond(response).map_err(|err| {
-                eprintln!("ERROR: could not serve a request: {err}");
-            })?;
+            serve_static_file(request, "src/index.html", "text/html; charset=utf-8")
         }
-        _ => {
-            request
-                .respond(Response::from_string("404").with_status_code(StatusCode(404)))
-                .map_err(|err| {
-                    eprintln!("ERROR: could not serve a request: {err}");
-                })?;
-        }
+        _ => serve_404(request),
     }
-
-    Ok(())
 }
 
 fn entry() -> Result<(), ()> {
