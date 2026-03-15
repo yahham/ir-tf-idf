@@ -4,5 +4,5 @@ fetch("/api/search", {
     headers: {
         'Content-Type': 'text/plain'
     },
-    body: "very bad movie",
+    body: "wow, i am so suprised!!!",
 }).then((response) => console.log(response));
