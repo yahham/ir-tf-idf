@@ -133,7 +133,8 @@ fn entry() -> Result<(), ()> {
 
             let mut tf_index = TermFreqIndex::new();
             tf_index_of_folder(Path::new(&dir_path), &mut tf_index)?;
-            save_tf_index(&tf_index, "index.json")?;
+
+            save_tf_index(&tf_index, "index.json")
         }
         "search" => {
             let index_path = args.next().ok_or_else(|| {
@@ -161,6 +162,8 @@ fn entry() -> Result<(), ()> {
             for (path, rank) in search_query(&tf_index, &prompt).iter().take(20) {
                 println!("{path} {rank}", path = path.display());
             }
+
+            Ok(())
         }
         "serve" => {
             let index_path = args.next().ok_or_else(|| {
@@ -178,16 +181,14 @@ fn entry() -> Result<(), ()> {
 
             let address = args.next().unwrap_or("127.0.0.1:8000".to_string());
 
-            return server::start(&address, &tf_index);
+            server::start(&address, &tf_index)
         }
         _ => {
             usage(&program);
             eprintln!("ERROR: unknown subcommand {subcommand}");
-            return Err(());
+            Err(())
         }
     }
-
-    Ok(())
 }
 
 fn main() -> ExitCode {
