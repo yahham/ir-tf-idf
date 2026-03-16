@@ -5,9 +5,10 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::result::Result;
 use std::str;
-use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 use xml::common::{Position, TextPosition};
 use xml::reader::{EventReader, XmlEvent};
+
+use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 
 struct Lexer<'a> {
     content: &'a [char],
@@ -192,24 +193,23 @@ fn usage(program: &str) {
     eprintln!("Usage: {program} [SUBCOMMAND] [OPTIONS]");
     eprintln!("Subcommands:");
     eprintln!(
-        "    index <folder>                      index the <folder> and save the index to index.json file"
+        "    index <folder>                  index the <folder> and save the index to index.json file"
     );
     eprintln!(
-        "    search <index-file>                 check how many documents are indexed in the file (searching is not implemented yet)"
+        "    search <index-file>             check how many documents are indexed in the file (searching is not implemented yet)"
     );
-    eprintln!("    serve <index-file> [adress]   start local HTTP server with Web Interface");
+    eprintln!("    serve <index-file> [address]    start local HTTP server with Web Interface");
 }
 
 fn serve_static_file(request: Request, file_path: &str, content_type: &str) -> Result<(), ()> {
     let content_type_header = Header::from_bytes("Content-Type", content_type)
-        .expect("That we dind't put any garbage in the headers");
-
+        .expect("That we didn't put any garbage in the headers");
     let file = File::open(file_path).map_err(|err| {
         eprintln!("ERROR: could not serve file {file_path}: {err}");
     })?;
     let response = Response::from_file(file).with_header(content_type_header);
     request.respond(response).map_err(|err| {
-        eprintln!("ERROR: could not serve static file {file_path} request: {err}");
+        eprintln!("ERROR: could not serve static file {file_path}: {err}");
     })
 }
 
@@ -243,7 +243,9 @@ fn serve_request(tf_index: &TermFreqIndex, mut request: Request) -> Result<(), (
     match (request.method(), request.url()) {
         (Method::Post, "/api/search") => {
             let mut buf = Vec::new();
-            let _ = request.as_reader().read_to_end(&mut buf);
+            request.as_reader().read_to_end(&mut buf).map_err(|err| {
+                eprintln!("ERROR: could not read the body of the request: {err}");
+            })?;
             let body = str::from_utf8(&buf)
                 .map_err(|err| {
                     eprintln!("ERROR: could not interpret body as UTF-8 string: {err}");
@@ -259,15 +261,20 @@ fn serve_request(tf_index: &TermFreqIndex, mut request: Request) -> Result<(), (
                 }
                 result.push((path, rank));
             }
-
             result.sort_by(|(_, rank1), (_, rank2)| rank1.partial_cmp(rank2).unwrap());
             result.reverse();
-            for (path, rank) in result.iter().take(10) {
-                println!("{path} => {rank}", path = path.display());
-            }
 
-            request.respond(Response::from_string("ok")).map_err(|err| {
-                eprintln!("ERROR: {err}");
+            let json = serde_json::to_string(&result.iter().take(20).collect::<Vec<_>>()).map_err(
+                |err| {
+                    eprintln!("ERROR: could not convert search results to JSON: {err}");
+                },
+            )?;
+
+            let content_type_header = Header::from_bytes("Content-Type", "application/json")
+                .expect("That we didn't put any garbage in the headers");
+            let response = Response::from_string(&json).with_header(content_type_header);
+            request.respond(response).map_err(|err| {
+                eprintln!("ERROR: could not serve a request {err}");
             })
         }
         (Method::Get, "/index.js") => {
@@ -323,14 +330,16 @@ fn entry() -> Result<(), ()> {
             })?;
 
             let address = args.next().unwrap_or("127.0.0.1:8000".to_string());
+
             let server = Server::http(&address).map_err(|err| {
-                eprintln!("ERROR: could not start HTTP server at {address}: {err}")
+                eprintln!("ERROR: could not start HTTP server at {address}: {err}");
             })?;
 
             println!("INFO: listening at http://{address}/");
 
             for request in server.incoming_requests() {
-                let _ = serve_request(&tf_index, request);
+                // TODO: serve custom 500 in case of an error
+                serve_request(&tf_index, request).ok();
             }
         }
         _ => {
