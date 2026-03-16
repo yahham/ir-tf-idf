@@ -227,6 +227,12 @@ fn tf(t: &str, d: &TermFreq) -> f32 {
     a / b
 }
 
+fn idf(t: &str, d: &TermFreqIndex) -> f32 {
+    let n = d.len() as f32;
+    let m = d.values().filter(|tf| tf.contains_key(t)).count().max(1) as f32;
+    return (n / m).log10();
+}
+
 fn serve_request(tf_index: &TermFreqIndex, mut request: Request) -> Result<(), ()> {
     println!(
         "INFO: received request! method: {:?}, url: {:?}",
@@ -247,16 +253,16 @@ fn serve_request(tf_index: &TermFreqIndex, mut request: Request) -> Result<(), (
 
             let mut result = Vec::<(&Path, f32)>::new();
             for (path, tf_table) in tf_index {
-                let mut total_tf = 0f32;
+                let mut rank = 0f32;
                 for token in Lexer::new(&body) {
-                    total_tf += tf(&token, &tf_table);
+                    rank += tf(&token, &tf_table) * idf(&token, &tf_index);
                 }
-                result.push((path, total_tf));
+                result.push((path, rank));
             }
 
             result.sort_by(|(_, rank1), (_, rank2)| rank1.partial_cmp(rank2).unwrap());
             result.reverse();
-            for (path, rank) in result {
+            for (path, rank) in result.iter().take(10) {
                 println!("{path} => {rank}", path = path.display());
             }
 
