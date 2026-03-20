@@ -1,6 +1,6 @@
-use std::collections::HashMap;
-use std::path::{PathBuf, Path};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::result::Result;
 
 pub trait Model {
@@ -30,20 +30,26 @@ impl SqliteModel {
 
     pub fn open(path: &Path) -> Result<Self, ()> {
         let connection = sqlite::open(path).map_err(|err| {
-            eprintln!("ERROR: could not open sqlite database {path}: {err}", path = path.display());
+            eprintln!(
+                "ERROR: could not open sqlite database {path}: {err}",
+                path = path.display()
+            );
         })?;
-        let this = Self {connection};
+        let this = Self { connection };
 
-        this.execute("
+        this.execute(
+            "
             CREATE TABLE IF NOT EXISTS Documents (
                 id INTEGER NOT NULL PRIMARY KEY,
                 path TEXT,
                 term_count INTEGER,
                 UNIQUE(path)
             );
-        ")?;
+        ",
+        )?;
 
-        this.execute("
+        this.execute(
+            "
             CREATE TABLE IF NOT EXISTS TermFreq (
                 term TEXT,
                 doc_id INTEGER,
@@ -51,15 +57,18 @@ impl SqliteModel {
                 UNIQUE(term, doc_id),
                 FOREIGN KEY(doc_id) REFERENCES Documents(id)
             );
-       ")?;
+       ",
+        )?;
 
-        this.execute("
+        this.execute(
+            "
             CREATE TABLE IF NOT EXISTS DocFreq (
                 term TEXT,
                 freq INTEGER,
                 UNIQUE(term)
             );
-        ")?;
+        ",
+        )?;
 
         Ok(this)
     }
@@ -82,11 +91,10 @@ impl Model for SqliteModel {
             stmt.bind_iter::<_, (_, sqlite::Value)>([
                 (":path", path.display().to_string().as_str().into()),
                 (":count", (terms.len() as i64).into()),
-            ]).map_err(log_err)?;
+            ])
+            .map_err(log_err)?;
             stmt.next().map_err(log_err)?;
-            unsafe {
-                sqlite3_sys::sqlite3_last_insert_rowid(self.connection.as_raw())
-            }
+            unsafe { sqlite3_sys::sqlite3_last_insert_rowid(self.connection.as_raw()) }
         };
 
         let mut tf = TermFreq::new();
@@ -101,7 +109,8 @@ impl Model for SqliteModel {
         for (term, freq) in &tf {
             // TermFreq
             {
-                let query = "INSERT INTO TermFreq(doc_id, term, freq) VALUES (:doc_id, :term, :freq)";
+                let query =
+                    "INSERT INTO TermFreq(doc_id, term, freq) VALUES (:doc_id, :term, :freq)";
                 let log_err = |err| {
                     eprintln!("ERROR: Could not execute query {query}: {err}");
                 };
@@ -110,7 +119,8 @@ impl Model for SqliteModel {
                     (":doc_id", doc_id.into()),
                     (":term", term.as_str().into()),
                     (":freq", (*freq as i64).into()),
-                ]).map_err(log_err)?;
+                ])
+                .map_err(log_err)?;
                 stmt.next().map_err(log_err)?;
             }
 
@@ -122,12 +132,11 @@ impl Model for SqliteModel {
                         eprintln!("ERROR: Could not execute query {query}: {err}");
                     };
                     let mut stmt = self.connection.prepare(query).map_err(log_err)?;
-                    stmt.bind_iter::<_, (_, sqlite::Value)>([
-                        (":term", term.as_str().into()),
-                    ]).map_err(log_err)?;
+                    stmt.bind_iter::<_, (_, sqlite::Value)>([(":term", term.as_str().into())])
+                        .map_err(log_err)?;
                     match stmt.next().map_err(log_err)? {
                         sqlite::State::Row => stmt.read::<i64, _>("freq").map_err(log_err)?,
-                        sqlite::State::Done => 0
+                        sqlite::State::Done => 0,
                     }
                 };
 
@@ -139,7 +148,8 @@ impl Model for SqliteModel {
                 stmt.bind_iter::<_, (_, sqlite::Value)>([
                     (":term", term.as_str().into()),
                     (":freq", (freq + 1).into()),
-                ]).map_err(log_err)?;
+                ])
+                .map_err(log_err)?;
                 stmt.next().map_err(log_err)?;
             }
         }
@@ -165,7 +175,8 @@ impl Model for InMemoryModel {
         for (path, (n, tf_table)) in &self.tfpd {
             let mut rank = 0f32;
             for token in &tokens {
-                rank += compute_tf(&token, *n, tf_table) * compute_idf(&token, self.tfpd.len(), &self.df);
+                rank += compute_tf(&token, *n, tf_table)
+                    * compute_idf(&token, self.tfpd.len(), &self.df);
             }
             result.push((path.clone(), rank));
         }
@@ -233,7 +244,10 @@ impl<'a> Lexer<'a> {
         token
     }
 
-    fn chop_while<P>(&mut self, mut predicate: P) -> &'a [char] where P: FnMut(&char) -> bool {
+    fn chop_while<P>(&mut self, mut predicate: P) -> &'a [char]
+    where
+        P: FnMut(&char) -> bool,
+    {
         let mut n = 0;
         while n < self.content.len() && predicate(&self.content[n]) {
             n += 1;
@@ -244,7 +258,7 @@ impl<'a> Lexer<'a> {
     pub fn next_token(&mut self) -> Option<String> {
         self.trim_left();
         if self.content.is_empty() {
-            return None
+            return None;
         }
 
         if self.content[0].is_numeric() {
@@ -252,7 +266,12 @@ impl<'a> Lexer<'a> {
         }
 
         if self.content[0].is_alphabetic() {
-            return Some(self.chop_while(|x| x.is_alphanumeric()).iter().map(|x| x.to_ascii_uppercase()).collect());
+            return Some(
+                self.chop_while(|x| x.is_alphanumeric())
+                    .iter()
+                    .map(|x| x.to_ascii_uppercase())
+                    .collect(),
+            );
         }
 
         return Some(self.chop(1).iter().collect());
