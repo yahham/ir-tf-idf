@@ -1,12 +1,12 @@
-use std::env;
 use std::fs::{self, File};
-use std::io::{BufReader, BufWriter};
 use std::path::Path;
-use std::process::ExitCode;
-use std::result::Result;
-use std::str;
+use xml::reader::{XmlEvent, EventReader};
 use xml::common::{Position, TextPosition};
-use xml::reader::{EventReader, XmlEvent};
+use std::env;
+use std::result::Result;
+use std::process::ExitCode;
+use std::str;
+use std::io::{BufReader, BufWriter};
 
 mod model;
 use model::*;
@@ -14,21 +14,15 @@ mod server;
 
 fn parse_entire_xml_file(file_path: &Path) -> Result<String, ()> {
     let file = File::open(file_path).map_err(|err| {
-        eprintln!(
-            "ERROR: could not open file {file_path}: {err}",
-            file_path = file_path.display()
-        );
+        eprintln!("ERROR: could not open file {file_path}: {err}", file_path = file_path.display());
     })?;
     let er = EventReader::new(BufReader::new(file));
     let mut content = String::new();
     for event in er.into_iter() {
         let event = event.map_err(|err| {
-            let TextPosition { row, column } = err.position();
+            let TextPosition {row, column} = err.position();
             let msg = err.msg();
-            eprintln!(
-                "{file_path}:{row}:{column}: ERROR: {msg}",
-                file_path = file_path.display()
-            );
+            eprintln!("{file_path}:{row}:{column}: ERROR: {msg}", file_path = file_path.display());
         })?;
 
         if let XmlEvent::Characters(text) = event {
@@ -55,27 +49,21 @@ fn save_model_as_json(model: &InMemoryModel, index_path: &str) -> Result<(), ()>
 
 fn add_folder_to_model(dir_path: &Path, model: &mut dyn Model) -> Result<(), ()> {
     let dir = fs::read_dir(dir_path).map_err(|err| {
-        eprintln!(
-            "ERROR: could not open directory {dir_path} for indexing: {err}",
-            dir_path = dir_path.display()
-        );
+        eprintln!("ERROR: could not open directory {dir_path} for indexing: {err}",
+                  dir_path = dir_path.display());
     })?;
 
     'next_file: for file in dir {
         let file = file.map_err(|err| {
-            eprintln!(
-                "ERROR: could not read next file in directory {dir_path} during indexing: {err}",
-                dir_path = dir_path.display()
-            );
+            eprintln!("ERROR: could not read next file in directory {dir_path} during indexing: {err}",
+                      dir_path = dir_path.display());
         })?;
 
         let file_path = file.path();
 
         let file_type = file.file_type().map_err(|err| {
-            eprintln!(
-                "ERROR: could not determine type of file {file_path}: {err}",
-                file_path = file_path.display()
-            );
+            eprintln!("ERROR: could not determine type of file {file_path}: {err}",
+                      file_path = file_path.display());
         })?;
 
         if file_type.is_dir() {
@@ -99,9 +87,7 @@ fn add_folder_to_model(dir_path: &Path, model: &mut dyn Model) -> Result<(), ()>
 fn usage(program: &str) {
     eprintln!("Usage: {program} [SUBCOMMAND] [OPTIONS]");
     eprintln!("Subcommands:");
-    eprintln!(
-        "    index <folder>                  index the <folder> and save the index to index.json file"
-    );
+    eprintln!("    index <folder>                  index the <folder> and save the index to index.json file");
     eprintln!("    search <index-file> <query>     search <query> within the <index-file>");
     eprintln!("    serve <index-file> [address]    start local HTTP server with Web Interface");
 }
@@ -128,29 +114,23 @@ fn entry() -> Result<(), ()> {
             model.begin()?;
             add_folder_to_model(Path::new(&dir_path), &mut model)?;
             model.commit()
-        }
+        },
         "search" => {
             let index_path = args.next().ok_or_else(|| {
                 usage(&program);
                 eprintln!("ERROR: no path to index is provided for {subcommand} subcommand");
             })?;
 
-            let prompt = args
-                .next()
-                .ok_or_else(|| {
-                    usage(&program);
-                    eprintln!("ERROR: no search query is provided {subcommand} subcommand");
-                })?
-                .chars()
-                .collect::<Vec<_>>();
+            let prompt = args.next().ok_or_else(|| {
+                usage(&program);
+                eprintln!("ERROR: no search query is provided {subcommand} subcommand");
+            })?.chars().collect::<Vec<_>>();
 
-            let index_file = File::open(&index_path).map_err(|err| {
+            let _index_file = File::open(&index_path).map_err(|err| {
                 eprintln!("ERROR: could not open index file {index_path}: {err}");
             })?;
 
-            let model: InMemoryModel = serde_json::from_reader(index_file).map_err(|err| {
-                eprintln!("ERROR: could not parse index file {index_path}: {err}");
-            })?;
+            let model = SqliteModel::open(Path::new(&index_path))?;
 
             for (path, rank) in model.search_query(&prompt)?.iter().take(20) {
                 println!("{path} {rank}", path = path.display());
