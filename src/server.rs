@@ -52,7 +52,10 @@ fn serve_api_search(model: &impl Model, mut request: Request) -> io::Result<()> 
         }
     };
 
-    let result = model.search_query(&body);
+    let result = match model.search_query(&body) {
+        Ok(result) => result,
+        Err(()) => return serve_500(request),
+    };
 
     let json = match serde_json::to_string(&result.iter().take(20).collect::<Vec<_>>()) {
         Ok(json) => json,
@@ -77,10 +80,10 @@ fn serve_request(model: &impl Model, request: Request) -> io::Result<()> {
     match (request.method(), request.url()) {
         (Method::Post, "/api/search") => serve_api_search(model, request),
         (Method::Get, "/index.js") => {
-            serve_static_file(request, "src/index.js", "text/javascript; charset=utf-8")
+            serve_static_file(request, "index.js", "text/javascript; charset=utf-8")
         }
         (Method::Get, "/") | (Method::Get, "/index.html") => {
-            serve_static_file(request, "src/index.html", "text/html; charset=utf-8")
+            serve_static_file(request, "index.html", "text/html; charset=utf-8")
         }
         _ => serve_404(request),
     }
