@@ -10,6 +10,7 @@ use xml::reader::{EventReader, XmlEvent};
 
 mod model;
 use model::*;
+mod lexer;
 mod server;
 
 fn parse_entire_txt_file(file_path: &Path) -> Result<String, ()> {
@@ -60,7 +61,6 @@ fn parse_entire_file_by_extension(file_path: &Path) -> Result<String, ()> {
         .to_string_lossy();
     match extension.as_ref() {
         "xhtml" | "xml" => parse_entire_xml_file(file_path),
-        // TODO: specialized parser for markdown files
         "txt" | "md" => parse_entire_txt_file(file_path),
         _ => {
             eprintln!(
