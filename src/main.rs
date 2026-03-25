@@ -117,22 +117,46 @@ fn add_folder_to_model(
             );
         })?;
 
+        let last_modified = file
+            .metadata()
+            .map_err(|err| {
+                eprintln!(
+                    "ERROR: could not get the metadata of file {file_path}: {err}",
+                    file_path = file_path.display()
+                )
+            })?
+            .modified()
+            .map_err(|err| {
+                eprintln!(
+                    "counld not get the last modification date of file {file_path}: {err}",
+                    file_path = file_path.display()
+                )
+            })?;
+
         if file_type.is_dir() {
             add_folder_to_model(&file_path, model, skipped)?;
             continue 'next_file;
         }
 
-        println!("Indexing {:?}...", &file_path);
+        if model.require_reindexing(&file_path, last_modified)? {
+            println!("Indexing {:?}...", &file_path);
 
-        let content = match parse_entire_file_by_extension(&file_path) {
-            Ok(content) => content.chars().collect::<Vec<_>>(),
-            Err(()) => {
-                *skipped += 1;
-                continue 'next_file;
-            }
-        };
+            let content = match parse_entire_file_by_extension(&file_path) {
+                Ok(content) => content.chars().collect::<Vec<_>>(),
+                Err(()) => {
+                    *skipped += 1;
+                    continue 'next_file;
+                }
+            };
 
-        model.add_document(file_path, &content)?;
+            model.add_document(file_path, last_modified, &content)?;
+        } else {
+            println!(
+                "Ignoring {file_path} because it is already indexed",
+                file_path = file_path.display()
+            );
+            *skipped += 1;
+        }
     }
 
     Ok(())
@@ -171,6 +195,30 @@ fn entry() -> Result<(), ()> {
     })?;
 
     match subcommand.as_str() {
+        "reindex" => {
+            assert!(!use_sqlite_mode, "The sqlite mode is deprecated");
+
+            let dir_path = args.next().ok_or_else(|| {
+                usage(&program);
+                eprintln!("ERROR: no directory is provided for {subcommand} subcommand");
+            })?;
+            let index_path = "index.json";
+
+            let index_file = File::open(&index_path).map_err(|err| {
+                eprintln!("ERROR: could not open index file {index_path}: {err}");
+            })?;
+
+            let mut model: InMemoryModel = serde_json::from_reader(index_file).map_err(|err| {
+                eprintln!("ERROR: could not parse index file {index_path}: {err}");
+            })?;
+
+            let mut skipped = 0;
+            add_folder_to_model(Path::new(&dir_path), &mut model, &mut skipped)?;
+            save_model_as_json(&model, index_path)?;
+            println!("Skipped {skipped} files.");
+            Ok(())
+        }
+
         "index" => {
             let dir_path = args.next().ok_or_else(|| {
                 usage(&program);
